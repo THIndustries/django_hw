@@ -6,6 +6,8 @@ from datetime import timedelta, timezone
 from django.utils.timezone import now
 from django.db.models import F, Sum
 from .models import OrderProduct
+from django.views.generic.edit import CreateView
+from .forms import ProductForm
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +20,7 @@ def about(request):
     return render(request, 'about.html')
 
 
-def show_orders(request, days, user_id):
-    timezone.now()
+def get_orders(request, days, user_id):
     date = timezone.now() - timezone.timedelta(days=days)
     result = OrderProduct.objects.prefetch_related('order', 'product').filter(
         order__created_at__gt=date, order__customer=user_id
@@ -34,3 +35,15 @@ def show_orders(request, days, user_id):
     }
 
     return render(request, 'homeworkapp/products_by_date.html', context)
+
+
+# Homework 4
+class ProductsListCreateView(CreateView):
+    model = Product
+    template_name = 'homeworkapp/products.html'
+    form_class = ProductForm
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['products'] = self.model.objects.all()
+        return context

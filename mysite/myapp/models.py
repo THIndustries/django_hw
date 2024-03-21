@@ -1,15 +1,22 @@
+from django.core.validators import RegexValidator
 from django.db import models
-from django.utils import timezone
+from django.db.models import Sum, F
+from django.urls import reverse
 
-class Client(models.Model):
-    name = models.CharField(max_length=255)
-    email = models.EmailField(unique=True)
-    phone_number = models.CharField(max_length=20)
+class User(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField()
+    phone_regex = RegexValidator(
+        regex=r'^\+?1?\d{7,15}$',
+        message="Phone number must be entered in the format: '+9999999'. Up to 15 digits allowed."
+    )
+    phone_number = models.CharField(validators=[phone_regex], max_length=17, blank=True)
     address = models.TextField()
-    registration_date = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.name
+        return f"{self.name}"
+
 
 class Product(models.Model):
     name = models.CharField(max_length=100)
@@ -17,27 +24,31 @@ class Product(models.Model):
     price = models.DecimalField(max_digits=8, decimal_places=2)
     amount = models.IntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
+    image = models.ImageField(upload_to='products', null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} - {self.price}"
 
-    def __str__(self):
-        return self.name
+    def get_absolute_url(self):
+        return reverse('products')
+
 
 class Order(models.Model):
-    client = models.ForeignKey(Client, related_name='orders', on_delete=models.CASCADE)
-    products = models.ForeignKey(Product, through='OrderItem')
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    order_date = models.DateTimeField(default=timezone.now)
+    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    products = models.ManyToManyField(Product, through='OrderProduct', related_name='orders')
+    total_price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            query = OrderProduct.objects.filter(order=self).annotate(
+                sub_total=F('order_amount') * F('product__price')
+            ).aggregate(result=Sum('sub_total'))
+            self.total_price = round(query['result'], 2)
+        super(Order, self).save()
 
     def __str__(self):
-        return f"Order {self.id} by {self.client.name}"
-
-class OrderItem(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    quantity = models.PositiveIntegerField()
-    price_at_the_time = models.DecimalField(max_digits=10, decimal_places=2)
+        return f"{self.created_at} - {self.total_price}"
 
 
 class OrderProduct(models.Model):
